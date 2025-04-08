@@ -1,0 +1,212 @@
+---
+title: "Exploring Crime Trends in Montgomery County"
+author: "Ray Leika"
+date: "2025-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+getwd()
+```
+
+```{r}
+library(tidyverse)
+setwd("/Users/leikarayjoseph/Desktop/DATA_205Crime Project") 
+#upload my working directory so I can install my file.
+Crime <- read_csv("MC_Crime_DATA.csv") 
+Crime
+```
+
+```{r}
+library(ggalluvial)
+library(plotly)
+```
+
+
+```{r}
+#putting the headers in lower case
+names(Crime) <- tolower(names(Crime))
+names(Crime) <- gsub(" ","",names(Crime))
+head(Crime)
+```
+
+```{r}
+Crime$Date <- as.Date(Crime$`dispatchdate/time`, format= "%m/%d/%Y %H:%M:%S %p")
+
+Crime$year <- year(Crime$Date)
+
+head(Crime)
+```
+
+```{r}
+Crime$Date <- as.Date(Crime$`dispatchdate/time`, format= "%m/%d/%Y %H:%M:%S %p")
+
+Crime$month <- month(Crime$Date)
+
+head(Crime)
+```
+
+```{r}
+# Remove every report from 2025 from my Data
+Crime <- subset(Crime, year != 2025)
+```
+
+Since the year 2025 is still ongoing, including it in the analysis could lead to misleading results because the data for that year is incomplete. To ensure a more accurate and fair comparison across years, I decided to exclude 2025 from the dataset.
+
+```{r}
+Crime <- Crime %>% 
+  filter(!city %in% c(0, 4, 6, 7))
+```
+These are number that where in the city column that I took out.
+
+```{r}
+# Count the variable "Crimename1" by year.
+Year_count <- Crime |>
+  group_by(crimename1, year) |>
+  count() |> # The number of crime for each crimename1 by year.
+  arrange(n) # Arrange in ascending order.
+
+  Year_count
+```
+
+```{r}
+# Count the variable "crimename1" to see wich type of crime happend the most.
+Crime_count1 <- Crime |>
+ group_by(crimename1) |>
+ count() |> 
+  # The variable crimename for each type of crime.
+ arrange(n) 
+# Arrange in ascending order.
+
+ Crime_count1
+```
+
+Looking at the dataset, most crimes are related to property (180,321 incidents), followed by crimes that impact society (142,330 incidents), like drug offenses and public disturbances. There are also quite a few crimes against people (38,774 incidents), such as assaults and robberies. The "Not a Crime" category (4,284 incidents) probably includes cases that were misclassified or don’t actually fit the definition of a crime.
+
+```{r}
+plot1 <- ggplot(data = Year_count, aes(x = year,
+           y = n,
+           alluvium= crimename1,
+           fill = crimename1, label = crimename1)) +
+  geom_alluvium() +
+  geom_flow() +
+  #geom_stratum(alpha = 0.5) +
+   labs(x= "Year", 
+          y= "Count", 
+          title = "Type of crime over the year") +
+          #caption = "source: DATA MONTGOMERY") +
+  theme_minimal() 
+ #ggtitle("Type of Crime over the Year")
+
+plot1
+```
+
+```{r}
+# Count the variable "crimename2" by year.
+Year_count2 <- Crime |>
+filter(crimename2 %in% c("Theft From Motor Vehicle", 
+                          "Simple Assault", 
+                          "Shoplifting", 
+                          "Destruction/Damage/Vandalism of Property", 
+                          "Drug/Narcotic Violations", 
+                          "Driving Under the Influence")) |> 
+  group_by(crimename2, year) |>
+  count() |> # The variable crimename2 for each year.
+  arrange(n) # Arrange in ascending order.
+
+  Year_count2
+```
+
+```{r}
+plot2 <- ggplot(data = Year_count2, aes(x = year,
+           y = n,
+           alluvium= crimename2,
+           fill = crimename2, label = crimename2)) +
+  geom_alluvium() +
+  geom_flow() +
+  #geom_stratum(alpha = 0.5) +
+   labs(x= "Year", 
+          y= "Count", 
+          title = "Evolution of the crimes over the year",
+          caption = "source: DataMontggomery") +
+  theme_minimal() 
+
+plot2
+```
+
+These two plot are a presntation of crime distribution over the year.
+
+```{r}
+# Count some of the types of crime per year by police district name
+Yearly_crime <- Crime |>
+  filter(crimename2 %in% c("Theft From Motor Vehicle", 
+                           "Simple Assault", 
+                           "Shoplifting", 
+                           "Destruction/Damage/Vandalism of Property", 
+                           "Drug/Narcotic Violations", 
+                           "Driving Under the Influence")) |> 
+  group_by(crimename2, year, policedistrictname) |>
+  count() |> 
+  arrange(n) # Arrange in ascending order
+
+Yearly_crime
+```
+
+
+
+```{r, na.rm = TRUE}
+ggplot(Yearly_crime, aes(x = policedistrictname, y = n, fill = crimename2)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Police District", y = "Crime Count", fill = "Crime Type", 
+       title = "Crime Type by Police District") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+From this plot I can see that Silver Spring has the highest number of crimes, but this result can be inaccurate because these districts don’t have the same amount of residents. A higher population usually leads to more reported crimes, so comparing raw numbers without adjusting for population size doesn't accurately reflect the relative crime rate or risk in each district.
+
+```{r}
+Yearly_crime1 <- Yearly_crime %>%
+  group_by(policedistrictname) %>%
+  mutate(total_crimes_in_district = sum(n),  # Total crimes in each district
+         crime_percentage = (n / total_crimes_in_district) * 100)  # Crime percentage
+
+# Step 2: Plot the data with crime percentages
+ggplot(Yearly_crime1, aes(x = policedistrictname, y = crime_percentage, fill = crimename2)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Police District", y = "Crime Percentage (%)", fill = "Crime Type", 
+       title = "Crime Percentage by Police District") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Tacoma Park has the highest crime rate, which suggests it may have more crimes relative to its population compared to other districts. This visualization can be improved by taking out the NA and othe, also some nicer colors would be better.
+
+```{r}
+# Crime Distribution by Type for Each Year
+plot3 <- ggplot(data = Year_count, aes(x = factor(year), y = n, fill = crimename1)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Year", 
+       y = "Crime Count", 
+       title = "Crime Distribution by Type for Each Year", 
+       caption = "Source: DataMontgomery") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set1")
+
+plot3
+```
+
+
+```{r}
+# Crime count for each city
+Crimecount_per_city <- Crime |>
+ group_by(city) |>
+ count()
+Crimecount_per_city
+```
+
+
