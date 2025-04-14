@@ -138,7 +138,7 @@ plot2 <- ggplot(data = Year_count2, aes(x = year,
 plot2
 ```
 
-These two plot are a presntation of crime distribution over the year.
+These two plot are a presentation of crime distribution over the year.
 
 ```{r}
 # Count some of the types of crime per year by police district name
@@ -167,7 +167,7 @@ ggplot(Yearly_crime, aes(x = policedistrictname, y = n, fill = crimename2)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-From this plot I can see that Silver Spring has the highest number of crimes, but this result can be inaccurate because these districts don’t have the same amount of residents. A higher population usually leads to more reported crimes, so comparing raw numbers without adjusting for population size doesn't accurately reflect the relative crime rate or risk in each district.
+From this plot I can see that Silver Spring has the highest number of crimes reports, but this result can be inaccurate because these districts don’t have the same amount of residents. A higher population usually leads to more reported crimes, so comparing raw numbers without adjusting for population size doesn't accurately reflect the relative crime rate or risk in each district.
 
 ```{r}
 Yearly_crime1 <- Yearly_crime %>%
@@ -184,7 +184,7 @@ ggplot(Yearly_crime1, aes(x = policedistrictname, y = crime_percentage, fill = c
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-Tacoma Park has the highest crime rate, which suggests it may have more crimes relative to its population compared to other districts. This visualization can be improved by taking out the NA and othe, also some nicer colors would be better.
+Tacoma Park has the highest crime reports, which suggests it may have more crimes relative to its population compared to other districts. This visualization can be improved by taking out the NA and other, also some nicer colors would be better.
 
 ```{r}
 # Crime Distribution by Type for Each Year
