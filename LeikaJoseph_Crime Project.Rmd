@@ -1,0 +1,761 @@
+---
+title: "Exploring Crime Trends in Montgomery County"
+author: "Ray Leika"
+date: "2025-04-07"
+output: html_document
+---
+
+**Crime, Home Value, and School Exposure: Insights from a Spatial Analysis of Montgomery County**
+
+##Exploring crime trends and their effects on communities across Montgomery County
+
+#Introduction This project explores patterns of crime across Montgomery County, Maryland, and investigates how these patterns relate to community-level factors such as housing and public school locations. Understanding where and when crime occurs, and how it may intersect with local resources and neighborhood conditions, is essential for supporting safer, more equitable communities.
+
+Using data from sources including the Montgomery County Open Data Portal and the U.S. Census Bureau, the analysis focuses on identifying crime trends over time, locating geographic hotspots, and comparing crime rates across different cities within the county. Median home value data is used to examine whether areas with higher crime tend to have lower property values, while public school locations are analyzed to understand their proximity to high-crime areas.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+getwd()
+```
+
+```{r}
+library(tidyverse)
+setwd("/Users/leikarayjoseph/Desktop/DATA_205Crime Project") 
+#upload my working directory so I can install my file.
+Crime <- read_csv("MC_Crime_DATA.csv") 
+Crime
+```
+
+```{r}
+# Load necessary libraries
+library(lubridate)
+library(ggplot2)
+library(ggalluvial)
+library(plotly)
+library(leaflet)
+library(leaflet.extras)
+library(ggmap)
+```
+
+```{r}
+#putting the headers in lower case
+names(Crime) <- tolower(names(Crime))
+names(Crime) <- gsub(" ","",names(Crime))
+head(Crime)
+```
+
+```{r}
+Crime$Date <- as.Date(Crime$`dispatchdate/time`, format= "%m/%d/%Y %H:%M:%S %p")
+
+Crime$year <- year(Crime$Date)
+
+head(Crime)
+```
+
+```{r}
+Crime$Date <- as.Date(Crime$`dispatchdate/time`, format= "%m/%d/%Y %H:%M:%S %p")
+
+Crime$month <- month(Crime$Date)
+
+head(Crime)
+```
+
+```{r}
+# Remove every report from 2025 from my Data
+Crime <- subset(Crime, year != 2025)
+```
+
+Since the year 2025 is still ongoing, including it in the analysis could lead to misleading results because the data for that year is incomplete. To ensure a more accurate and fair comparison across years, I decided to exclude 2025 from the dataset.
+
+# Ruled out all the invalid city names and all the ones that are also not part of Montgomery County
+
+```{r}
+Crime <- Crime %>% 
+  filter(!city %in% c(0, 4, 6, 7, NA))
+
+```
+
+```{r}
+# List of cities to exclude
+exclude_cities <- c(
+  "Mount Rainier", "Alexandria", "Fairfax", "Laurel", "Boyds", 
+  "Brinklow", "Redland", "District of Columbia", "Hyattsville PG", 
+  "Riverdale PG", "Washington", "mclean", "Falls Church", "Vienna", "Woodbine","Highland", "Hyattstown", "Greenbelt", "friendship heights", "Columbia", "apencerville", "Spencerville", "herndon","oxon hill", "hagerstown", "lanham", "beltsville", "ashton", "dickerson", "mount airy", "hyattsville", "adelphi", "frederick"
+)
+
+# Clean city names for consistent matching
+Crime_cleaned <- Crime %>%
+  mutate(city = trimws(tolower(city))) %>%
+  filter(!city %in% tolower(trimws(exclude_cities)) & !is.na(city))  # filtering
+
+# View the cleaned dataset
+head(Crime_cleaned)
+
+```
+
+The dataset’s City column included several locations outside of Montgomery County and some entries with numbers instead of city names. I cleaned the data carefully to ensure the analysis remains focused and accurate.
+
+```{r}
+Crime_Select <- Crime_cleaned %>%
+  select(`dispatchdate/time`, start_date_time, end_date_time, victims, crimename1, crimename2, crimename3, policedistrictname, city, zipcode, agency, place, latitude, longitude, policedistrictnumber, location, Date, year, month)
+Crime_Select
+
+```
+
+```{r}
+# Count the variable "Crimename1" by year.
+Year_count <- Crime_Select |>
+  group_by(crimename1, year) |>
+  count() |> # The number of crime for each crimename1 by year.
+  arrange(n) # Arrange in ascending order.
+
+  Year_count
+```
+
+```{r}
+# Count the variable "crimename1" to see wich type of crime happend the most.
+Crime_count1 <- Crime_Select |>
+ group_by(crimename1) |>
+ count() |> 
+  # The variable crimename1 for each type of crime.
+ arrange(n) 
+# Arrange in ascending order.
+
+ Crime_count1
+```
+
+Looking at the dataset, most crimes are related to property with 179,020 incidents, followed by crimes that impact society with 141,175 incidents, like drug offenses and public disturbances. There are also quite a few crimes against people with 38,502 incidents, such as assaults and robberies. The "Not a Crime" category with 4,256 incidents includes cases that were misclassified or don’t actually fit the definition of a crime.
+
+```{r}
+plot1 <- ggplot(data = Year_count, aes(x = year,
+           y = n,
+           alluvium= crimename1,
+           fill = crimename1, label = crimename1)) +
+  geom_alluvium() +
+  geom_flow() +
+  #geom_stratum(alpha = 0.5) +
+   labs(x= "Year", 
+          y= "Count", 
+          title = "Type of crime over the year") +
+          #caption = "source: DATA MONTGOMERY") +
+  theme_minimal() 
+ #ggtitle("Type of Crime over the Year")
+
+plot1
+```
+
+Crime against property is the most common type of crime and has been growing over the years.
+
+See what is part of the not a crime category:
+
+```{r}
+# Filter for 'Not a Crime' category
+not_a_crime <- subset(Crime_Select, crimename1 == "Crime Against Not a Crime")
+
+# View first few rows
+head(not_a_crime)
+```
+
+# Where does most of the Crime Againts Property happend:
+
+```{r}
+total_property_crime <- Crime_Select |>
+  filter(crimename1 == "Crime Against Property") |>
+  nrow()
+
+Crime_Place <- Crime_Select |>
+  filter(crimename1 == "Crime Against Property") |>
+  count(place, sort = TRUE) |>
+  slice_max(n, n = 10) |>
+  mutate(percentage = (n / total_property_crime) * 100,   
+         percentage = sprintf("%.1f%%", percentage))
+Crime_Place
+```
+
+```{r}
+ggplot(Crime_Place, aes(x = reorder(place, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = percentage), 
+            hjust = -0.1,  # pushes text slightly outside the bar
+            size = 2) +
+  coord_flip() +
+  labs(
+    title = "Top 10 Places Where Crimes Against Property Occur",
+    x = "Place",
+    y = "Number of Crimes"
+  ) +
+  theme_minimal()
+```
+
+Most crimes against property happen in residential parking lots.This may be because these areas are often less monitored, especially at night. People might also leave valuables in their cars, making them easy targets for theft.
+
+# see the most commun crime in the crimename2 column
+
+```{r}
+# Count the variable "crimename1" to see wich type of crime happend the most.
+Crime_count_xx <- Crime_Select |>
+ group_by(crimename2) |>
+ count() |> 
+  # The variable crimename1 for each type of crime.
+ arrange(n) 
+# Arrange in ascending order.
+
+ Crime_count_xx
+```
+
+Use the top 10 most common type of crime and visualize the trend over the years.
+
+```{r}
+# Count the variable "crimename2" by year.
+Year_count2 <- Crime |>
+filter(crimename2 %in% c("Theft From Motor Vehicle", 
+                          "Simple Assault", 
+                          "Shoplifting", 
+                          "Destruction/Damage/Vandalism of Property",
+                          "Drug/Narcotic Violations", 
+                          "Driving Under the Influence",
+                         "Theft from Building",
+                         "Motor Vehicle Theft",
+                         "Identity Theft",
+                         "Burglary/Breaking and Entering")) |> 
+  group_by(crimename2, year) |>
+  count() |> # The variable crimename2 for each year.
+  arrange(n) # Arrange in ascending order.
+
+  Year_count2
+```
+
+```{r}
+plot2 <- ggplot(data = Year_count2, aes(x = year,
+           y = n,
+           alluvium= crimename2,
+           fill = crimename2, label = crimename2)) +
+  geom_alluvium(color= "black", size= 0.1) +
+  geom_flow() +
+  #geom_stratum(alpha = 0.5) +
+  scale_fill_brewer(palette = "Paired")+ # add color palette
+   labs(x= "Year", 
+          y= "Count", 
+          title = "Evolution of the crimes over the year",
+          caption = "source: DataMontggomery") +
+  theme_minimal() 
+
+plot2
+```
+
+Some crimes increased while others decreased over the years. In both plots, we can see that shoplifting kept rising each year. Drug and narcotic violations dropped a lot compared to before. Robbery went up a little, but the number is still low compared to other crimes.Inflation,post pandemic. comparing commun value
+
+```{r}
+# Count some of the types of crime per year by police district name
+Yearly_crime <- Crime_Select |>
+filter(crimename2 %in% c("Theft From Motor Vehicle", 
+                          "Simple Assault", 
+                          "Shoplifting", 
+                          "Destruction/Damage/Vandalism of Property",
+                          "Drug/Narcotic Violations", 
+                          "Driving Under the Influence",
+                         "Theft from Building",
+                         "Motor Vehicle Theft",
+                         "Identity Theft",
+                         "Burglary/Breaking and Entering"),
+         policedistrictname != "OTHER") |> 
+  group_by(crimename2, year, policedistrictname) |>
+  count() |> 
+  arrange(n) # Arrange in ascending order
+
+Yearly_crime
+```
+
+```{r, na.rm = TRUE}
+ggplot(Yearly_crime, aes(x = policedistrictname, y = n, fill = crimename2)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_brewer(palette = "Paired")+ # add color palette
+  labs(x = "Police District", y = "Crime Count", fill = "Crime Type", 
+       title = "Crime Type by Police District") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+This plot shows that Wheaton and Silver Spring experience the highest number of crimes among all police districts, with shoplifting and theft from motor vehicles being particularly common. Takoma Park, on the other hand, consistently reports much lower crime counts. While certain crime types like shoplifting remain high across most districts, other types such as drug/narcotic violations and motor vehicle theft are more prominent in specific areas like Silver Spring. Overall, the distribution of crime types varies slightly by district, but the most heavily affected areas are clearly identifiable.
+
+```{r, na.rm = TRUE}
+Yearly_crime1 <- Yearly_crime |>
+  group_by(policedistrictname) |>
+  mutate(total_crimes_in_district = sum(n),  # Total crimes in each district
+         crime_percentage = (n / total_crimes_in_district) * 100)  # Crime percentage
+
+# Step 2: Plot the data with crime percentages
+ggplot(Yearly_crime1, aes(x = policedistrictname, y = crime_percentage, fill = crimename2)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_brewer(palette = "Paired")+ # add color palette
+  labs(x = "Police District", y = "Crime Percentage (%)", fill = "Crime Type", 
+       title = "Crime Percentage by Police District") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Compared to the previous plot showing the raw number of crimes, this percentage-based plot highlights the relative importance of each crime type within each district. Even though Silver Spring and Wheaton had higher absolute crime counts before, when adjusting for the total number of crimes, the differences between districts are less dramatic. One standout observation is that shoplifting represents a much larger share of total crime in Takoma Park, even though the district has fewer crimes overall.
+
+## How has crime changed over the years?
+
+```{r}
+plot2.0 <- ggplot(data = Year_count2, aes(x = year, y = n, color = crimename2)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Year",
+    y = "Count",
+    title = "Evolution of Crimes Over the Years",
+    caption = "Source: DataMontgomery",
+    color = "Crime Type"
+  ) +
+  theme_minimal()
+plot2.0
+```
+
+```{r, na.rm= TRUE}
+# Crime Report Distribution by Police District for Each Year
+ggplot(data = Yearly_crime1, aes(x = factor(year), y = crime_percentage, fill =policedistrictname )) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Year", 
+       y = "Crime Percentage (%)", 
+       title = "Crime Distribution by Type for Each Year", 
+       caption = "Source: DataMontgomery") +
+  theme_minimal() 
+  #scale_fill_brewer(palette = "Set1")
+
+```
+
+```{r}
+# Crime Distribution by Type for Each Year
+plot3 <- ggplot(data = Year_count, aes(x = factor(year), y = n, fill = crimename1)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Year", 
+       y = "Crime Count", 
+       title = "Crime Distribution by Type for Each Year", 
+       caption = "Source: DataMontgomery") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set1")
+
+plot3
+```
+
+```{r}
+# Crime count for each city
+Crimecount_per_city <- Crime_Select |>
+ group_by(city) |>
+ count()
+Crimecount_per_city
+```
+
+```{r, na.rm =True}
+
+# Count crimes per year
+Crime_trend <- Crime_Select |>
+  group_by(year) |>
+  count()
+
+# Create the line chart for crime trend over the year
+ggplot(Crime_trend, aes(x = year, y = n, group = 1)) +
+  geom_line(color = "darkblue", size = 1) + 
+  geom_point(color = "red", size = 2) + 
+  labs(x = "Year", y = "Number of Crimes", title = "Crime Trend Over the Year", caption = "Source: DataMontgomery") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# What times of day see the most crime?
+
+# Did the time when crimes happen change over the years? Are crimes happening later at night now compared to before?
+
+```{r}
+Crime_Select <- Crime_Select %>%
+  mutate(`start_date_time` = parse_date_time(`start_date_time`, orders = "mdY IMS p"),
+         hour = hour(`start_date_time`))
+Crime_Select
+```
+
+Group crime by hour and make a plot:
+
+```{r}
+Crime_hour <- Crime_Select |>
+  group_by(hour) |>
+  summarise(crime_count = n())
+Crime_hour
+```
+
+```{r}
+ggplot(Crime_hour, aes(x = hour, y = crime_count)) +
+  geom_col(fill = "skyblue") +
+  labs(x = "Hour of the Day", y = "Number of Crimes",
+       title = "Crime Occurrences by Hour") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(Crime_hour, aes(x = hour, y = crime_count)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE, color = "darkred") +
+  labs(x = "Hour of the Day", y = "Number of Crimes",
+       title = "Trend of Crimes Over the Day") +
+  theme_minimal()
+```
+
+```{r}
+Crime_hour_year <- Crime_Select |>
+  group_by(year, hour) %>%
+  summarise(total_crimes = n(), .groups = "drop")
+Crime_hour_year
+```
+
+```{r}
+ggplot(Crime_hour_year, aes(x = hour, y = total_crimes, color = factor(year))) +
+  geom_line() +
+  labs(
+    title = "Crime by Hour Over the Years",
+    x = "Hour of the Day",
+    y = "Number of Crimes",
+    color = "Year",
+    caption = "Source: DataMontgomery"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(Crime_hour_year, aes(x = hour, y = total_crimes)) +
+  geom_line(aes(color = factor(year))) +  # Make a line for each year
+  labs(
+    title = "Crime by Hour Over the Years",
+    x = "Hour of the Day",
+    y = "Number of Crimes",
+    color = "Year",
+    caption = "Source: DataMontgomery"
+  ) +
+  facet_wrap(~ year, scales = "free_y") +  # Facet by year, reset each year
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for clarity
+```
+
+In these plots, we observe that despite fluctuations in the overall number of crimes, the pattern of when crimes occur remains consistent across the years. We see a recurring peak around midnight, indicating more crimes happening during this time. Additionally, there is a noticeable decline in crimes around 5 AM each year, with a gradual increase as the day progresses, peaking again around noon before decreasing once more. Although the total number of crimes may fluctuate from year to year, the timing of when crimes occur remains largely unchanged, with the peak at midnight and the decrease around 5 AM persisting. Over the years, there is no significant shift towards crimes happening later at night. The overall pattern has stayed relatively stable, suggesting that the time of day when crimes happen has not changed significantly over time.
+
+# See the crime trend by month over the years:
+
+```{r}
+Crime_Select |>
+  count(month) |>
+  ggplot(aes(x = factor(month), y = n, group = 1)) +
+  geom_line(color = "lightblue", linewidth = 1.2) +
+  geom_point(color = "darkred") +
+  labs(
+    title = "Crime Pattern by Month",
+    x = "Month",
+    y = "Number of Crimes"
+  ) +
+  theme_minimal()
+```
+
+We can see that there is an increase in the amount of crime in May. As the weather gets warmer, more people go outside. This creates more chances for crimes like theft, fights, or property damage to happen.
+
+## Using API for Montgomery county home value
+
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(stringr)
+```
+
+```{r}
+# Define the API endpoint and parameters
+url <- "https://api.census.gov/data/2022/acs/acs5"
+params <- list(
+  get = "NAME,B25077_001E",  # NAME = City Name, B25077_001E = Median Home Value
+  `for` = "place:*",         # Get all places (cities/towns)
+  `in` = "state:24"          # Maryland (state:24)
+)
+```
+
+```{r}
+# Send GET request
+response <- GET(url, query = params)
+
+# Check if request succeeded
+if (status_code(response) == 200) {
+  # Parse JSON response
+  data <- fromJSON(content(response, "text"))
+  
+  # Convert to DataFrame (first row is column names)
+  df <- as.data.frame(data[-1, ], stringsAsFactors = FALSE)
+  names(df) <- data[1, ]
+  
+  # Convert median home value to numeric
+  df$B25077_001E <- as.numeric(df$B25077_001E)
+  
+  # Define Montgomery County cities
+  montgomery_cities <- c(
+    "Chevy Chase",  "Aspen Hill", 
+    "Damascus", "Gaithersburg", "Clarksburg", 
+    "Olney", "Garrett Park", "Glen Echo", "Kensington", "Laytonsville", "Martins Additions", "Colesville","cabin john",
+    "North Chevy Chase", "Poolesville", "Rockville", "Takoma Park", "Seneca Valley", "Montgomery Village",
+    "Derwood", "White Oak", "Washington Grove", "Burtonsville", "darnestown", "brookeville", "sandy spring", "barnesville",
+    "Glenmont", "Wheaton", "Silver Spring", "Bethesda", "Potomac", "Germantown"
+  )
+  
+  # Filter rows for Montgomery County cities (case-insensitive match)
+  df_filtered <- df %>%
+    filter(str_detect(tolower(NAME), paste(tolower(montgomery_cities), collapse = "|"))) %>%
+    rename(City = NAME, Median_Home_Value = B25077_001E) %>%
+    select(City, Median_Home_Value)
+  
+  # Show result
+  print(df_filtered)
+  
+} else {
+  # Print error if request failed
+  cat("Error:", status_code(response), content(response, "text"))
+}
+```
+
+EDA: I have some more cities that I don't have in my crime data, I'm will clean them so I can have the same number of cities but I'm also going to put the cities name in lower case so they can match the crime one and like that I will not have a problem to combine them.
+
+```{r}
+#putting the headers in lower case
+names(df_filtered) <- tolower(names(df_filtered))
+names(df_filtered) <- gsub(" ","",names(df_filtered))
+head(df_filtered)
+```
+
+```{r}
+df_filtered <- df_filtered %>%
+  mutate(city = tolower(city),                           # make lowercase
+         city = str_remove(city, "\\s*,\\s*maryland$"),   # remove ", Maryland" with optional spaces
+         city = str_remove(city, "\\s+cdp$"),             # remove trailing "CDP"
+         city = str_remove(city, "\\city$"), 
+         city = str_trim(city))   
+df_filtered
+```
+
+```{r}
+remove_cities <- c(
+  "chevy chase section five village",
+  "chevy chase section three village",
+  "chevy chase view town",
+  "chevy chase town",
+  "chevy chase village town",
+  "north chevy chase village",
+  "north potomac",
+  "potomac heights",
+  "south kensington",
+  "north kensington",
+  "potomac park"
+)
+
+df_filtered <- df_filtered |>
+  filter(!city %in% remove_cities)
+df_filtered
+```
+
+```{r}
+df_filtered <- df_filtered |>
+  mutate(
+    city = str_replace_all(city, " town| city", ""),  # remove ' town' or ' city'
+    city = str_replace(city, "ashton-sandy spring", "sandy spring"),  # rename ashton_sandy spring to match the crime dataset.
+    city = str_trim(city)  # remove extra spaces
+  )
+df_filtered
+```
+
+## Looking for correlation
+
+Is crime related to property values? Do cities with higher home prices have lower crime rates? Understanding this relationship can help reveal whether economic factors play a role in local crime patterns.
+
+```{r}
+MC_crime_Combine <- left_join(Crimecount_per_city,df_filtered, by = "city")
+
+MC_crime_Combine
+```
+
+```{r}
+correlation <- cor(MC_crime_Combine$n, MC_crime_Combine$median_home_value, use = "complete.obs")
+print(correlation)
+```
+
+```{r}
+# Find the statistical information for my model
+Eq <- lm(n ~ median_home_value, data= MC_crime_Combine)
+summary(Eq)
+```
+
+The results showed that there is no meaningful relationship between the two. The p-value was 0.43, which means the connection we see in the data is likely just due to chance. The R-squared value was about 2%, meaning home values explain only a tiny part of the differences in crime numbers between cities. In short, in this dataset, higher or lower home prices do not seem to be linked to how many crimes happen.
+
+```{r}
+# Perform Pearson correlation test
+cor_test <- cor.test(MC_crime_Combine$n, MC_crime_Combine$median_home_value, use = "complete.obs")
+
+# Print the result
+print(cor_test)
+```
+
+The plot below shows how the number of crimes in each city compares to its median home value.
+
+```{r}
+# Remove scientific notation
+options(scipen = 999)
+# Scatter plot with a trend line
+ggplot(MC_crime_Combine, aes(x = median_home_value, y = n)) +
+  geom_point() + # scatter plot points
+  labs(
+    title = "Crime Count vs. Median Home Value",
+    x = "Median Home Value",
+    y = "Number of Crimes"
+  ) +
+  theme_minimal() +
+  #xlim(0, 1000000) + 
+  #ylim(0,20000) +
+  geom_smooth(method = "lm", formula= y~x, se = FALSE, color = "red") # linear trend line
+  #method = 'lm', formula= y~x, se = FALSE
+```
+
+# Mapping Crime Across Cities
+
+```{r}
+# Calculate quantile bounds on Crime_Select
+lon_q <- quantile(Crime_Select$longitude, c(0.01, 0.99))
+lat_q <- quantile(Crime_Select$latitude, c(0.01, 0.99))
+
+# Filter outliers directly into a temporary object
+Crime_Select_NoOutliers <- Crime_Select |>
+  filter(
+    !is.na(longitude), !is.na(latitude),
+    longitude != 0, latitude != 0,
+    longitude >= lon_q[1], longitude <= lon_q[2],
+    latitude >= lat_q[1], latitude <= lat_q[2]
+  )
+
+# Plot the filtered data
+leaflet(data = Crime_Select_NoOutliers) |>
+  addTiles() |>
+  addCircleMarkers(
+    ~longitude, ~latitude,
+    radius = 3,
+    color = "red",
+    stroke = FALSE,
+    fillOpacity = 0.5,
+    clusterOptions = markerClusterOptions(),
+    popup = ~paste("City:", city, "<br>", "Crime:", crimename1)
+  )
+```
+
+Yellow circle - 100-10 crimes. Green circle - 10 or less crime. Orange circle - more than 100 crimes and more.
+
+```{r}
+Crimecount_per_city
+```
+
+## Exploring Crime Around Schools
+
+Understanding distribution of crime near schools.Identify whether schools are surrounded by higher levels of crime and highlight potential areas of concern.
+
+```{r}
+#upload my working directory so I can install my file.
+School_Info <- read_csv("Public_Schools_20250324.csv") 
+School_Info
+```
+
+```{r}
+#putting the headers in lower case
+names(School_Info) <- tolower(names(School_Info))
+names(School_Info) <- gsub(" ","",names(School_Info))
+head(School_Info)
+```
+
+```{r}
+library(sf)
+# Remove rows with missing or invalid coordinates
+School_Info <- School_Info[is.finite(School_Info$longitude) & is.finite(School_Info$latitude), ]
+
+# Convert to sf object
+schools_sf <- st_as_sf(School_Info, coords = c("longitude", "latitude"), crs = 4326)
+crime_sf <- st_as_sf(Crime_Select, coords = c("longitude", "latitude"), crs = 4326)
+```
+
+```{r}
+leaflet() %>%
+  addTiles() %>%
+  addHeatmap(data = city_sf,
+             lat = ~latitude,
+             lng = ~longitude,
+             intensity = ~crime_count,
+             radius = 20,           # slightly smaller radius
+             blur = 10,             # lower blur for sharper edges
+             max = max(city_sf$crime_count, na.rm = TRUE) * 0.5,  # reduce max to boost contrast
+             group = "Crime Prevalence") %>%
+  addCircleMarkers(data = city_sf,
+                   lat = ~latitude,
+                   lng = ~longitude,
+                   radius = 5,
+                   color = "blue",
+                   stroke = TRUE,
+                   fillOpacity = 0.7,
+                   popup = ~paste("City:", city, "<br>Crimes:", crime_count),
+                   group = "Cities") %>%
+  addLayersControl(
+    overlayGroups = c("Crime Prevalence", "Cities"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+Explore whether schools are situated in areas with high or low crime density and to identify any visible patterns of clustering.
+
+```{r}
+library(leaflet)
+library(leaflet.extras)
+library(htmltools)
+crime_sf_clean <- crime_sf |>
+  filter(!is.na(longitude), !is.na(latitude),
+         longitude != 0, latitude != 0)
+
+leaflet() |>
+  addTiles() |>
+  addHeatmap(data = crime_sf_clean,
+             lat = ~latitude, 
+             lng = ~longitude,
+             radius = 15, 
+             blur = 10, 
+             max = 0.05, 
+             group = "Crimes") |>
+  addCircleMarkers(data = schools_sf,
+                   radius = 5,
+                   color = "blue",
+                   stroke = TRUE,
+                   weight = 1,
+                   fillOpacity = 1,
+                   popup = ~schoolname,
+                   group = "Schools") |>
+  addLayersControl(
+    overlayGroups = c("Crimes", "Schools"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+```{r}
+write.csv(Crime_Select, "crime_select.csv", row.names = FALSE)
+```
+
+```{r}
+write.csv(School_Info, "School_Info.csv", row.names = FALSE)
+```
+
+```{r}
+write.csv(df_filtered, "Median_home_value_filtered.csv", row.names = FALSE)
+```
+
+```{}
+```
+
+The R portion of this project focused on uncovering initial trends and relationships within the data through visual and exploratory analysis. Using RStudio, I created a range of charts including bar plots, alluvial diagrams, and correlation plots that revealed which cities had the highest crime counts, how crime types shifted over time, and how crime frequency aligned with property values.
+
+Key findings included the dominance of property crime across the county, particularly in cities like Silver Spring and Rockville. The bar plots made it clear that crime was not evenly distributed, while alluvial diagrams helped visualize how different types of crime were connected to city locations. I also used R to examine the relationship between the number of crimes and the median home value by city. While this analysis showed no strong correlation overall, it raised important questions that shaped the more targeted statistical tests conducted later in Python.
