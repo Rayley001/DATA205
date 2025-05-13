@@ -682,51 +682,31 @@ schools_sf <- st_as_sf(School_Info, coords = c("longitude", "latitude"), crs = 4
 crime_sf <- st_as_sf(Crime_Select, coords = c("longitude", "latitude"), crs = 4326)
 ```
 
-```{r}
-leaflet() %>%
-  addTiles() %>%
-  addHeatmap(data = city_sf,
-             lat = ~latitude,
-             lng = ~longitude,
-             intensity = ~crime_count,
-             radius = 20,           # slightly smaller radius
-             blur = 10,             # lower blur for sharper edges
-             max = max(city_sf$crime_count, na.rm = TRUE) * 0.5,  # reduce max to boost contrast
-             group = "Crime Prevalence") %>%
-  addCircleMarkers(data = city_sf,
-                   lat = ~latitude,
-                   lng = ~longitude,
-                   radius = 5,
-                   color = "blue",
-                   stroke = TRUE,
-                   fillOpacity = 0.7,
-                   popup = ~paste("City:", city, "<br>Crimes:", crime_count),
-                   group = "Cities") %>%
-  addLayersControl(
-    overlayGroups = c("Crime Prevalence", "Cities"),
-    options = layersControlOptions(collapsed = FALSE)
-  )
-```
 
 Explore whether schools are situated in areas with high or low crime density and to identify any visible patterns of clustering.
 
 ```{r}
-library(leaflet)
-library(leaflet.extras)
+library(dplyr)
+library(sf)
 library(htmltools)
-crime_sf_clean <- crime_sf |>
-  filter(!is.na(longitude), !is.na(latitude),
+
+# Step 1: Filter invalid coordinates FIRST
+Crime_Select_clean <- Crime_Select %>%
+  filter(is.finite(longitude), is.finite(latitude),
          longitude != 0, latitude != 0)
 
-leaflet() |>
-  addTiles() |>
-  addHeatmap(data = crime_sf_clean,
-             lat = ~latitude, 
-             lng = ~longitude,
+# Step 2: Convert to sf
+crime_sf <- st_as_sf(Crime_Select_clean, coords = c("longitude", "latitude"), crs = 4326)
+
+# Step 3: Use sf object directly in leaflet
+leaflet() %>%
+  addTiles() %>%
+  addHeatmap(data = crime_sf,
+             intensity = ~1,   # Optional: uniform intensity
              radius = 15, 
              blur = 10, 
              max = 0.05, 
-             group = "Crimes") |>
+             group = "Crimes") %>%
   addCircleMarkers(data = schools_sf,
                    radius = 5,
                    color = "blue",
@@ -734,7 +714,7 @@ leaflet() |>
                    weight = 1,
                    fillOpacity = 1,
                    popup = ~schoolname,
-                   group = "Schools") |>
+                   group = "Schools") %>%
   addLayersControl(
     overlayGroups = c("Crimes", "Schools"),
     options = layersControlOptions(collapsed = FALSE)
